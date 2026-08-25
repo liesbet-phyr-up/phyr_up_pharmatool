@@ -1,0 +1,29 @@
+import { RoleAccess, MaximedShell } from "@/components/MaximedShell";
+import { trpc } from "@/lib/trpc";
+import { BookOpen, CheckCircle2, Clock3, FileText, PlayCircle, ShieldCheck } from "lucide-react";
+import { useLocation } from "wouter";
+
+const categoryLabels: Record<string, string> = { product_training: "Product Training", self_development: "Self Development", business_training_101: "Business Training 101", kpis: "KPIs", regulatory_training: "Regulatory Training" };
+const previewCourses = [
+  { title: "Product knowledge foundations", category: "product_training", summary: "Example structure: written learning, product slides, knowledge check, and acknowledgement.", estimatedMinutes: 35, isRequired: 1, progressPercent: 0, enrollmentStatus: null, id: 0 },
+  { title: "Everyday compliance essentials", category: "regulatory_training", summary: "Example structure: policy document, video refresher, controlled assessment, and recorded acceptance.", estimatedMinutes: 25, isRequired: 1, progressPercent: 0, enrollmentStatus: null, id: 0 },
+  { title: "Customer-first conversations", category: "self_development", summary: "Example structure: scenario lesson, reflection prompts, and a practical action checklist.", estimatedMinutes: 20, isRequired: 0, progressPercent: 0, enrollmentStatus: null, id: 0 },
+];
+
+function LearnerContent() {
+  const [location, setLocation] = useLocation();
+  const catalog = trpc.learning.catalog.useQuery();
+  const courses = catalog.data?.length ? catalog.data : previewCourses;
+  const active = courses.filter(course => (course.progressPercent ?? 0) > 0 && (course.progressPercent ?? 0) < 100);
+  const completed = courses.filter(course => course.progressPercent === 100).length;
+
+  return <MaximedShell space="learner" eyebrow="My learning" title="Your learning, organised." description="Complete required learning, return to active courses, and keep your progress in one place.">
+    <section className="grid gap-4 sm:grid-cols-3"><Metric label="Assigned learning" value={String(courses.length)} detail="Available to you" icon={<BookOpen className="h-5 w-5" />} /><Metric label="In progress" value={String(active.length)} detail="Continue where you left off" icon={<Clock3 className="h-5 w-5" />} /><Metric label="Completed" value={String(completed)} detail="Recorded to your profile" icon={<CheckCircle2 className="h-5 w-5" />} /></section>
+    <section className="mt-8"><div className="flex items-end justify-between gap-4"><div><p className="section-kicker text-[#DA0000]">Learning catalogue</p><h2 className="mt-2 text-xl font-extrabold">Your assigned pathways</h2></div>{!catalog.data?.length ? <span className="rounded-full bg-[#EAF1FB] px-3 py-1.5 text-xs font-extrabold text-[#093B88]">Example structures</span> : null}</div><div className="mt-5 grid gap-4 lg:grid-cols-3">{courses.map((course, index) => <article key={`${course.title}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-5 app-surface"><div className="flex items-start justify-between gap-3"><span className="rounded-full bg-[#EAF1FB] px-2.5 py-1 text-[11px] font-extrabold text-[#093B88]">{categoryLabels[course.category] ?? course.category}</span>{course.isRequired ? <span className="text-[11px] font-extrabold text-[#DA0000]">Required</span> : null}</div><h3 className="mt-7 text-lg font-extrabold text-slate-950">{course.title}</h3><p className="mt-2 min-h-15 text-sm leading-6 text-slate-600">{course.summary}</p><div className="mt-6"><div className="flex justify-between text-xs font-bold text-slate-500"><span>{course.progressPercent || 0}% complete</span><span>{course.estimatedMinutes} min</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#DA0000]" style={{ width: `${course.progressPercent || 0}%` }} /></div></div><button disabled={!course.id} onClick={() => setLocation(`/course/${course.id}`)} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#093B88] px-4 py-3 text-sm font-extrabold text-[#093B88] transition-colors hover:bg-[#093B88] hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{course.id ? "Open course" : "Structure ready for content"}<PlayCircle className="h-4 w-4" /></button></article>)}</div></section>
+    <section className="mt-8 rounded-2xl border border-[#C7DBF7] bg-[#EAF1FB] p-5 sm:flex sm:items-center sm:justify-between"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-[#093B88]"><ShieldCheck className="h-5 w-5" /></div><div><h2 className="font-extrabold text-[#093B88]">Need-to-know training stays visible</h2><p className="mt-1 text-sm leading-6 text-slate-600">Required items and assessment outcomes are stored against your Maximed learning profile.</p></div></div><button onClick={() => location.includes("#pathways") ? setLocation("/learn") : window.scrollTo({ top: 0, behavior: "smooth" })} className="mt-4 text-sm font-extrabold text-[#093B88] sm:mt-0">Back to top</button></section>
+  </MaximedShell>;
+}
+
+function Metric({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: React.ReactNode }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 app-surface"><div className="flex items-center justify-between"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#EAF1FB] text-[#093B88]">{icon}</span><p className="text-xs font-bold text-slate-400">Learning profile</p></div><p className="metric-value mt-6 text-3xl font-extrabold text-slate-950">{value}</p><p className="mt-1 text-sm font-extrabold text-slate-700">{label}</p><p className="mt-1 text-xs text-slate-500">{detail}</p></article>; }
+
+export default function LearnerDashboard() { return <RoleAccess allowed={["learner", "trainer", "admin"]} title="Your Maximed learning"><LearnerContent /></RoleAccess>; }

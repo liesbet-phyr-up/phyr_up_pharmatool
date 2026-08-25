@@ -1,0 +1,29 @@
+# Project TODO
+
+- [x] Superseded the original Phyr-up naming with the approved Maximed platform brand.
+- [x] Create five learning pathways: Product Training, Self Development, Business Training 101, KPIs, and Regulatory Training.
+- [x] Implement secure user sign-in and profile-based learner-progress persistence.
+- [x] Design an original, responsive interface after visual direction is agreed.
+- [x] Add learner dashboard, pathway views, and progress indicators.
+- [x] Write and run unit tests for key learning and progress workflows.
+- [x] Save a release checkpoint after final verified desktop and mobile layouts.
+- [x] Apply Maximed blue, red, and white brand language to an original Maximed learning-platform design.
+- [x] Create a responsive learner experience for mobile and desktop sales staff.
+- [x] Implement a separate trainer dashboard for authorised Maximed teaching staff only.
+- [x] Add role-based access control so learners cannot access trainer analytics.
+- [x] Track enrolment, completion, assessment results, and learning progress for reporting.
+- [x] Present trainer metrics for learner participation, completion rates, and assessment performance.
+- [x] Rename all user-facing product references to Maximed and remove Phyr-up naming.
+- [x] Create learner, trainer, and administrator roles with appropriate role-based access controls.
+- [x] Support email-based authentication from a staff-provided access link.
+- [x] Model mixed-format learning content: video, documents, slides, written lessons, quizzes, and acknowledgements.
+- [x] Enforce configurable quiz passing marks and attempt limits.
+- [x] Store learner branch, region, job role, manager, and product team for administrative reporting.
+- [x] Allow teaching staff to view organisation-wide learner results.
+- [x] Provide administrators UI controls for organisational reporting dimensions and user management.
+- [x] Build an interactive launch foundation with example course structures and dashboards.
+- [x] Apply a clean, minimalist Maximed visual system for both mobile and desktop.
+- [x] Add procedure-level tests for module completion, assessment outcomes, and attempt-limit rejection.
+- [x] Implement a staff-provided access-link flow that restricts sign-in to invited Maximed email addresses.
+- [ ] Push the release-ready Maximed learning platform code to the user-provided GitHub repository.
+- [ ] Verify public repository access and transfer the current release to its main branch.
