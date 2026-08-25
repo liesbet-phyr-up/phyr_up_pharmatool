@@ -25,6 +25,6 @@
 - [x] Apply a clean, minimalist Maximed visual system for both mobile and desktop.
 - [x] Add procedure-level tests for module completion, assessment outcomes, and attempt-limit rejection.
 - [x] Implement a staff-provided access-link flow that restricts sign-in to invited Maximed email addresses.
-- [ ] Push the release-ready Maximed learning platform code to the user-provided GitHub repository.
-- [ ] Verify public repository access and transfer the current release to its main branch.
-- [ ] Create a private Maximed learning repository under vanderberghenry-oss and push the release-ready project.
+- [x] Push the release-ready Maximed learning platform code to the user-provided GitHub account.
+- [x] Superseded collaborator-repository transfer after its remote rejected the connected account; preserved the release in the user-owned repository instead.
+- [x] Create a private Maximed learning repository under vanderberghenry-oss and push the release-ready project.
