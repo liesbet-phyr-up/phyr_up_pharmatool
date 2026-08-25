@@ -27,3 +27,4 @@
 - [x] Implement a staff-provided access-link flow that restricts sign-in to invited Maximed email addresses.
 - [ ] Push the release-ready Maximed learning platform code to the user-provided GitHub repository.
 - [ ] Verify public repository access and transfer the current release to its main branch.
+- [ ] Create a private Maximed learning repository under vanderberghenry-oss and push the release-ready project.
