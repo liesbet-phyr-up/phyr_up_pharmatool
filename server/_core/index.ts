@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import * as db from "../db";
+import { registerNalediRoutes } from "../naledi.routes";
 import { appRouter } from "../routers";
 import { registerAuthRoutes } from "./auth";
 import { createContext } from "./context";
@@ -68,6 +69,8 @@ async function startServer() {
   // route is no longer registered: it cannot work off-platform and the
   // OWNER_OPEN_ID admin path is gone.
   registerAuthRoutes(app);
+  // Naledi POC: isolated from tRPC learning mutations. Fail-closed if unconfigured.
+  registerNalediRoutes(app);
   // tRPC API
   app.use(
     "/api/trpc",
