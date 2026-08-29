@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import * as db from "../db";
@@ -21,6 +23,29 @@ for (const name of ["JWT_SECRET", "DATABASE_URL"]) {
     console.error(`[Boot] Refusing to start: ${name} is not set.`);
     process.exit(1);
   }
+}
+
+// Node 18-safe (import.meta.dirname is undefined on Node <20.11; this file
+// runs bundled as dist/index.js).
+const BUNDLE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+// Locate the committed drizzle migrations inside the deployed image. Fails
+// closed with a clear error instead of silently skipping migrations.
+function resolveMigrationsFolder(): string {
+  const candidates = [
+    path.join(process.cwd(), "drizzle"),
+    path.resolve(BUNDLE_DIR, "drizzle"),
+    path.resolve(BUNDLE_DIR, "..", "drizzle"),
+  ];
+  const folder = candidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, "meta", "_journal.json"))
+  );
+  if (!folder) {
+    throw new Error(
+      `[Boot] Migrations folder not found (needs meta/_journal.json). Looked in: ${candidates.join(", ")}`
+    );
+  }
+  return folder;
 }
 
 async function startServer() {
@@ -59,15 +84,15 @@ async function startServer() {
   }
 
   // Apply committed migrations before serving traffic. Fails closed: a missing
-  // database or a migration error prevents listen.
+  // database, a missing migrations folder, or a migration error prevents listen.
   const database = await db.getDb();
   if (!database) {
     console.error("[Boot] Database unavailable: cannot apply migrations.");
     process.exit(1);
   }
-  await migrate(database, {
-    migrationsFolder: path.join(process.cwd(), "drizzle"),
-  });
+  const migrationsFolder = resolveMigrationsFolder();
+  console.log(`[Boot] Migrations folder: ${migrationsFolder}`);
+  await migrate(database, { migrationsFolder });
   console.log("[Boot] Migrations applied.");
 
   if (ENV.bootstrapAdminEmail) {
