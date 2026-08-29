@@ -48,7 +48,6 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
-    redeemInvite: protectedProcedure.input(z.object({ token: z.string().min(20).max(80) })).mutation(({ ctx, input }) => db.redeemStaffInvite(ctx.user.id, input.token)),
   }),
   learning: router({
     catalog: activeAccessProcedure.query(({ ctx }) => db.getLearnerCatalog(ctx.user.id)),

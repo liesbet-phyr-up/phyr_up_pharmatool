@@ -42,7 +42,9 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    // First-party session cookie (Javin, 29 Aug): sameSite "lax" for email
+    // OTP login. "none" was required by the removed Manus portal flow.
+    sameSite: "lax",
     secure: isSecureRequest(req),
   };
 }

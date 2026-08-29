@@ -1,5 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   assessmentAttempts,
@@ -14,7 +14,6 @@ import {
   staffInvites,
   users,
 } from "../drizzle/schema";
-import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -58,11 +57,6 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (user.role !== undefined) {
     values.role = user.role;
     updateSet.role = user.role;
-  } else if (user.openId === ENV.ownerOpenId) {
-    values.role = "admin";
-    updateSet.role = "admin";
-    values.accessStatus = "active";
-    updateSet.accessStatus = "active";
   }
 
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
@@ -76,6 +70,85 @@ export async function getUserByOpenId(openId: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result[0];
+}
+
+// First-party identity: the normalized mailbox maps deterministically onto the
+// existing NOT NULL UNIQUE `users.openId` column (64 chars). "mail:" + 43-char
+// base64url(sha256) fits with room to spare; uniqueness of openId gives us
+// one-row-per-email without a schema change.
+export function emailIdentity(email: string | null | undefined): string {
+  return "mail:" + createHash("sha256").update(normalizedEmail(email)).digest("base64url");
+}
+
+export async function getUserByEmail(email: string | null | undefined) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, emailIdentity(email)))
+    .limit(1);
+  return result[0];
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createFirstPartyUser(
+  email: string,
+  role: "learner" | "trainer" | "admin",
+  accessStatus: "pending" | "active" | "revoked" = "active"
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const normalized = normalizedEmail(email);
+  const existing = await getUserByEmail(normalized);
+  if (existing) return existing;
+  await db.insert(users).values({
+    openId: emailIdentity(normalized),
+    email: normalized,
+    loginMethod: "email",
+    role,
+    accessStatus,
+  });
+  const created = await getUserByEmail(normalized);
+  if (!created) throw new Error("Failed to create account");
+  return created;
+}
+
+export async function hasPendingInviteForEmail(email: string | null | undefined): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const normalized = normalizedEmail(email);
+  if (!normalized) return false;
+  const result = await db
+    .select({ id: staffInvites.id, acceptedAt: staffInvites.acceptedAt, expiresAt: staffInvites.expiresAt })
+    .from(staffInvites)
+    .where(eq(staffInvites.email, normalized))
+    .limit(1);
+  const invite = result[0];
+  if (!invite || invite.acceptedAt) return false;
+  if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) return false;
+  return true;
+}
+
+// One-shot bootstrap (Javin, 29 Aug): if no admin exists yet, the
+// BOOTSTRAP_ADMIN_EMAIL mailbox becomes an active admin. Idempotent: once any
+// admin row exists this is a no-op.
+export async function bootstrapAdmin(email: string | null | undefined): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const normalized = normalizedEmail(email);
+  if (!normalized) return false;
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin")).limit(1);
+  if (admin) return false;
+  const user = await createFirstPartyUser(normalized, "admin", "active");
+  await db.update(users).set({ role: "admin", accessStatus: "active" }).where(eq(users.id, user.id));
+  return true;
 }
 
 export type ReportingFilters = {
@@ -109,7 +182,7 @@ export function canSubmitAssessment(existingAttempts: number, attemptLimit: numb
   return existingAttempts < attemptLimit;
 }
 
-function normalizedEmail(email: string | null | undefined) {
+export function normalizedEmail(email: string | null | undefined) {
   return email?.trim().toLowerCase() ?? "";
 }
 
@@ -424,18 +497,26 @@ export async function getStaffInvites() {
   return db.select({ id: staffInvites.id, email: staffInvites.email, role: staffInvites.role, branch: staffInvites.branch, region: staffInvites.region, expiresAt: staffInvites.expiresAt, acceptedAt: staffInvites.acceptedAt, createdAt: staffInvites.createdAt }).from(staffInvites).orderBy(desc(staffInvites.createdAt));
 }
 
-export async function redeemStaffInvite(userId: number, token: string) {
+export async function redeemStaffInviteByEmail(
+  email: string | null | undefined,
+  token: string
+) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Sign in with the invited Maximed email address to redeem this link");
   const [invite] = await db.select().from(staffInvites).where(eq(staffInvites.token, token)).limit(1);
   if (!invite) throw new Error("This invitation link is not valid");
   if (invite.acceptedAt) throw new Error("This invitation link has already been used");
   if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) throw new Error("This invitation link has expired");
-  const [person] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
-  if (!person || normalizedEmail(person.email) !== normalizedEmail(invite.email)) throw new Error("Sign in with the invited Maximed email address to redeem this link");
+  if (normalizedEmail(invite.email) !== normalized) throw new Error("Sign in with the invited Maximed email address to redeem this link");
+
+  // First-party redemption: the OTP-proven mailbox is the identity. No prior
+  // Manus session required.
+  const user = await createFirstPartyUser(normalized, invite.role, "active");
+  await db.update(users).set({ role: invite.role, accessStatus: "active" }).where(eq(users.id, user.id));
+  await db.insert(employeeProfiles).values({ userId: user.id, branch: invite.branch, region: invite.region, jobRole: invite.jobRole, managerName: invite.managerName, productTeam: invite.productTeam }).onDuplicateKeyUpdate({ set: { branch: invite.branch, region: invite.region, jobRole: invite.jobRole, managerName: invite.managerName, productTeam: invite.productTeam } });
   const now = new Date();
-  await db.update(users).set({ role: invite.role, accessStatus: "active" }).where(eq(users.id, userId));
-  await db.insert(employeeProfiles).values({ userId, branch: invite.branch, region: invite.region, jobRole: invite.jobRole, managerName: invite.managerName, productTeam: invite.productTeam }).onDuplicateKeyUpdate({ set: { branch: invite.branch, region: invite.region, jobRole: invite.jobRole, managerName: invite.managerName, productTeam: invite.productTeam } });
   await db.update(staffInvites).set({ acceptedAt: now }).where(eq(staffInvites.id, invite.id));
-  return { role: invite.role, accessStatus: "active" as const };
+  return { userId: user.id, email: normalized, role: invite.role, accessStatus: "active" as const };
 }

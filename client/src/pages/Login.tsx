@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   InputOTP,
@@ -6,37 +5,20 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { postJson } from "@/lib/http";
-import { CheckCircle2, MailCheck, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { ChevronRight, MailCheck, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { useLocation } from "wouter";
 
-type RedeemResult = { role?: string };
+type VerifyResult = { role?: string };
 
-// Invite activation no longer requires a prior sign-in (the old protected
-// redeemInvite mutation did). The holder proves the invited mailbox with an
-// OTP code, then redeems the token server-side against that email.
-export default function InviteActivation() {
-  const [, params] = useRoute("/invite/:token");
-  const token = params?.token ?? "";
+export default function Login() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "otp">("email");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (user?.accessStatus === "active")
-      setLocation(
-        user.role === "learner"
-          ? "/learn"
-          : user.role === "trainer"
-            ? "/training"
-            : "/admin"
-      );
-  }, [setLocation, user]);
 
   const requestCode = async () => {
     setBusy(true);
@@ -51,12 +33,11 @@ export default function InviteActivation() {
     }
   };
 
-  const activate = async () => {
+  const verify = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await postJson<RedeemResult>("/api/auth/invite/redeem", {
-        token,
+      const result = await postJson<VerifyResult>("/api/auth/otp/verify", {
         email,
         code,
       });
@@ -82,36 +63,19 @@ export default function InviteActivation() {
           <span className="maximed-wordmark text-xl text-[#093B88]">
             MAXIMED<sup>+</sup>
           </span>
-          <span className="section-kicker text-[#DA0000]">Staff access</span>
+          <span className="section-kicker text-[#DA0000]">Staff sign-in</span>
         </div>
         <div className="mt-10 grid h-13 w-13 place-items-center rounded-2xl bg-[#EAF1FB] text-[#093B88]">
           <MailCheck className="h-7 w-7" />
         </div>
         <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-slate-950">
-          Activate your learning access.
+          Sign in to your learning.
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          This invitation activates a Maximed staff profile. Enter the exact
-          email address the invitation was sent to and confirm it with a code.
+          Enter your Maximed staff email and we will send you a 6-digit code.
         </p>
-        <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex gap-3">
-            <ShieldCheck className="h-5 w-5 shrink-0 text-[#093B88]" />
-            <div>
-              <p className="text-sm font-extrabold text-slate-800">
-                Access stays controlled
-              </p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                The link is single-use, is matched to its invited email address,
-                and grants only the assigned Maximed role.
-              </p>
-            </div>
-          </div>
-        </div>
 
-        {loading ? (
-          <div className="mt-7 h-11 animate-pulse rounded-xl bg-slate-100" />
-        ) : step === "email" ? (
+        {step === "email" ? (
           <>
             <input
               type="email"
@@ -127,7 +91,7 @@ export default function InviteActivation() {
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#093B88] px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
               {busy ? "Sending…" : "Email me a code"}
-              <CheckCircle2 className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </>
         ) : (
@@ -157,11 +121,10 @@ export default function InviteActivation() {
             </div>
             <button
               disabled={busy || code.length !== 6}
-              onClick={activate}
+              onClick={verify}
               className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#093B88] px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
             >
-              {busy ? "Activating…" : "Activate learning access"}
-              <CheckCircle2 className="h-4 w-4" />
+              {busy ? "Signing in…" : "Sign in"}
             </button>
             <button
               disabled={busy}
@@ -172,6 +135,21 @@ export default function InviteActivation() {
             </button>
           </>
         )}
+
+        <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex gap-3">
+            <ShieldCheck className="h-5 w-5 shrink-0 text-[#093B88]" />
+            <div>
+              <p className="text-sm font-extrabold text-slate-800">
+                First time here?
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Use the invitation link sent to your staff email address to
+                activate your access.
+              </p>
+            </div>
+          </div>
+        </div>
 
         {error ? (
           <p className="mt-4 text-sm font-bold text-[#DA0000]">{error}</p>
