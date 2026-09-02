@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
+import { ASSESSMENT_QUESTION_TYPES, COURSE_CATEGORIES, COURSE_MODULE_TYPES } from "../shared/course";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -63,13 +64,7 @@ export const courses = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     title: varchar("title", { length: 240 }).notNull(),
     summary: text("summary"),
-    category: mysqlEnum("category", [
-      "product_training",
-      "self_development",
-      "business_training_101",
-      "kpis",
-      "regulatory_training",
-    ]).notNull(),
+    category: mysqlEnum("category", COURSE_CATEGORIES).notNull(),
     audience: varchar("audience", { length: 160 }),
     estimatedMinutes: int("estimatedMinutes").default(0).notNull(),
     isRequired: int("isRequired").default(0).notNull(),
@@ -87,9 +82,12 @@ export const courseModules = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     courseId: int("courseId").notNull().references(() => courses.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 240 }).notNull(),
-    moduleType: mysqlEnum("moduleType", ["video", "document", "slides", "lesson", "quiz", "acknowledgement"]).notNull(),
+    moduleType: mysqlEnum("moduleType", COURSE_MODULE_TYPES).notNull(),
     body: text("body"),
     resourceUrl: text("resourceUrl"),
+    resourceKey: varchar("resourceKey", { length: 512 }),
+    resourceName: varchar("resourceName", { length: 255 }),
+    resourceContentType: varchar("resourceContentType", { length: 160 }),
     position: int("position").default(1).notNull(),
     estimatedMinutes: int("estimatedMinutes").default(0).notNull(),
     isRequired: int("isRequired").default(1).notNull(),
@@ -152,6 +150,7 @@ export const assessmentQuestions = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     assessmentId: int("assessmentId").notNull().references(() => assessments.id, { onDelete: "cascade" }),
     prompt: text("prompt").notNull(),
+    questionType: mysqlEnum("questionType", ASSESSMENT_QUESTION_TYPES).notNull().default("multiple_choice"),
     choicesJson: text("choicesJson").notNull(),
     correctChoice: varchar("correctChoice", { length: 255 }).notNull(),
     position: int("position").default(1).notNull(),

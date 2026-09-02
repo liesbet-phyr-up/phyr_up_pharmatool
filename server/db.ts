@@ -172,14 +172,23 @@ export function buildModuleCompletionRecord(userId: number, moduleId: number, ac
   return { userId, moduleId, completedAt, acknowledgementConfirmedAt: acknowledgement ? completedAt : null };
 }
 
-export function evaluateAssessment(questions: Array<{ id: number; correctChoice: string }>, answers: Record<string, string>, passingMark: number) {
-  const correct = questions.filter(question => answers[String(question.id)] === question.correctChoice).length;
+export function evaluateAssessment(questions: Array<{ id: number; correctChoice: string; questionType?: "multiple_choice" | "short_answer" }>, answers: Record<string, string>, passingMark: number) {
+  const normaliseAnswer = (value: string | undefined) => (value ?? "").trim().toLocaleLowerCase();
+  const correct = questions.filter(question => normaliseAnswer(answers[String(question.id)]) === normaliseAnswer(question.correctChoice)).length;
   const scorePercent = questions.length ? Math.round((correct / questions.length) * 100) : 0;
   return { scorePercent, passed: scorePercent >= passingMark };
 }
 
 export function canSubmitAssessment(existingAttempts: number, attemptLimit: number) {
   return existingAttempts < attemptLimit;
+}
+
+function requiredPredecessorsAreComplete(
+  modules: Array<{ id: number; position: number; isRequired: number }>,
+  completedModuleIds: Set<number>,
+  target: { position: number }
+) {
+  return modules.filter(module => module.position < target.position && module.isRequired === 1).every(module => completedModuleIds.has(module.id));
 }
 
 export function normalizedEmail(email: string | null | undefined) {
@@ -227,6 +236,9 @@ export async function getCourseWorkspace(courseId: number, userId: number) {
       moduleType: courseModules.moduleType,
       body: courseModules.body,
       resourceUrl: courseModules.resourceUrl,
+      resourceKey: courseModules.resourceKey,
+      resourceName: courseModules.resourceName,
+      resourceContentType: courseModules.resourceContentType,
       position: courseModules.position,
       estimatedMinutes: courseModules.estimatedMinutes,
       isRequired: courseModules.isRequired,
@@ -244,7 +256,21 @@ export async function getCourseWorkspace(courseId: number, userId: number) {
     .where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.userId, userId)))
     .limit(1);
 
-  return { course, modules, enrollment };
+  const assessmentRows = await db.select().from(assessments).where(eq(assessments.courseId, courseId));
+  const assessmentIds = assessmentRows.map(assessment => assessment.id);
+  const allAttempts = assessmentIds.length
+    ? await db.select().from(assessmentAttempts).where(eq(assessmentAttempts.userId, userId)).orderBy(desc(assessmentAttempts.submittedAt))
+    : [];
+
+  return {
+    course,
+    modules,
+    enrollment,
+    assessments: assessmentRows.map(assessment => {
+      const attempts = allAttempts.filter(attempt => attempt.assessmentId === assessment.id);
+      return { ...assessment, attemptCount: attempts.length, latestAttempt: attempts[0] ?? null };
+    }),
+  };
 }
 
 export async function recordModuleCompletion(userId: number, moduleId: number, acknowledgement: boolean) {
@@ -253,6 +279,14 @@ export async function recordModuleCompletion(userId: number, moduleId: number, a
 
   const [module] = await db.select().from(courseModules).where(eq(courseModules.id, moduleId)).limit(1);
   if (!module) throw new Error("Learning module not found");
+
+  if (module.moduleType === "quiz") throw new Error("Complete the assessment to finish this quiz step.");
+  if (module.moduleType === "acknowledgement" && !acknowledgement) throw new Error("Confirm the acknowledgement before completing this step.");
+  const courseSteps = await db.select({ id: courseModules.id, position: courseModules.position, isRequired: courseModules.isRequired }).from(courseModules).where(eq(courseModules.courseId, module.courseId));
+  const completedRows = await db.select({ moduleId: moduleCompletions.moduleId }).from(moduleCompletions).where(eq(moduleCompletions.userId, userId));
+  if (!requiredPredecessorsAreComplete(courseSteps, new Set(completedRows.map(row => row.moduleId)), module)) {
+    throw new Error("Please complete the earlier required training steps first.");
+  }
 
   const now = new Date();
   await db.insert(moduleCompletions).values(buildModuleCompletionRecord(userId, moduleId, acknowledgement, now)).onDuplicateKeyUpdate({
@@ -297,7 +331,7 @@ export async function getLearnerAssessment(assessmentId: number, userId: number)
   const [assessment] = await db.select().from(assessments).where(eq(assessments.id, assessmentId)).limit(1);
   if (!assessment) return null;
   const questions = await db
-    .select({ id: assessmentQuestions.id, prompt: assessmentQuestions.prompt, choicesJson: assessmentQuestions.choicesJson, position: assessmentQuestions.position })
+    .select({ id: assessmentQuestions.id, prompt: assessmentQuestions.prompt, questionType: assessmentQuestions.questionType, choicesJson: assessmentQuestions.choicesJson, position: assessmentQuestions.position })
     .from(assessmentQuestions)
     .where(eq(assessmentQuestions.assessmentId, assessmentId))
     .orderBy(asc(assessmentQuestions.position));
@@ -326,6 +360,7 @@ export async function submitLearnerAssessment(assessmentId: number, userId: numb
   const { scorePercent, passed } = evaluateAssessment(questions, answers, assessment.passingMark);
   const attemptNumber = previous.length + 1;
 
+  const submittedAt = new Date();
   await db.insert(assessmentAttempts).values({
     assessmentId,
     userId,
@@ -333,9 +368,27 @@ export async function submitLearnerAssessment(assessmentId: number, userId: numb
     scorePercent,
     passed: passed ? 1 : 0,
     answersJson: JSON.stringify(answers),
+    submittedAt,
   });
 
-  return { attemptNumber, scorePercent, passed, attemptsRemaining: assessment.attemptLimit - attemptNumber, passingMark: assessment.passingMark };
+  if (passed && assessment.moduleId) {
+    const [module] = await db.select().from(courseModules).where(eq(courseModules.id, assessment.moduleId)).limit(1);
+    if (module) {
+      const courseSteps = await db.select({ id: courseModules.id, position: courseModules.position, isRequired: courseModules.isRequired }).from(courseModules).where(eq(courseModules.courseId, module.courseId));
+      const completedRows = await db.select({ moduleId: moduleCompletions.moduleId }).from(moduleCompletions).where(eq(moduleCompletions.userId, userId));
+      if (!requiredPredecessorsAreComplete(courseSteps, new Set(completedRows.map(row => row.moduleId)), module)) {
+        throw new Error("Please complete the earlier required training steps first.");
+      }
+      await db.insert(moduleCompletions).values(buildModuleCompletionRecord(userId, module.id, false, submittedAt)).onDuplicateKeyUpdate({ set: { completedAt: submittedAt } });
+      const modules = await db.select({ id: courseModules.id }).from(courseModules).where(eq(courseModules.courseId, module.courseId));
+      const completed = await db.select({ moduleId: moduleCompletions.moduleId }).from(moduleCompletions).innerJoin(courseModules, eq(courseModules.id, moduleCompletions.moduleId)).where(and(eq(courseModules.courseId, module.courseId), eq(moduleCompletions.userId, userId)));
+      const progressPercent = calculateLearningProgress(modules.length, completed.length);
+      await db.insert(courseEnrollments).values({ userId, courseId: module.courseId, status: getLearningStatus(progressPercent), progressPercent, startedAt: submittedAt, completedAt: progressPercent === 100 ? submittedAt : null }).onDuplicateKeyUpdate({ set: { status: getLearningStatus(progressPercent), progressPercent, startedAt: submittedAt, completedAt: progressPercent === 100 ? submittedAt : null } });
+      return { attemptNumber, scorePercent, passed, attemptsRemaining: assessment.attemptLimit - attemptNumber, passingMark: assessment.passingMark, progressPercent };
+    }
+  }
+
+  return { attemptNumber, scorePercent, passed, attemptsRemaining: assessment.attemptLimit - attemptNumber, passingMark: assessment.passingMark, progressPercent: null };
 }
 
 export async function getStaffReporting(filters: ReportingFilters) {
@@ -360,10 +413,14 @@ export async function getStaffReporting(filters: ReportingFilters) {
   const filteredPeople = people.filter(person => matchesFilters(person, filters));
   const learnerIds = new Set(filteredPeople.map(person => person.id));
 
+  const publishedCourseRows = await db.select({ id: courses.id }).from(courses).where(eq(courses.status, "published"));
+  const publishedCourseIds = new Set(publishedCourseRows.map(course => course.id));
   const enrollmentRows = await db
     .select({
       userId: courseEnrollments.userId,
+      courseId: courseEnrollments.courseId,
       courseTitle: courses.title,
+      category: courses.category,
       status: courseEnrollments.status,
       progressPercent: courseEnrollments.progressPercent,
       dueAt: courseEnrollments.dueAt,
@@ -371,7 +428,7 @@ export async function getStaffReporting(filters: ReportingFilters) {
     })
     .from(courseEnrollments)
     .innerJoin(courses, eq(courses.id, courseEnrollments.courseId));
-  const enrollments = enrollmentRows.filter(enrollment => learnerIds.has(enrollment.userId));
+  const enrollments = enrollmentRows.filter(enrollment => learnerIds.has(enrollment.userId) && publishedCourseIds.has(enrollment.courseId));
 
   const attemptRows = await db
     .select({ userId: assessmentAttempts.userId, scorePercent: assessmentAttempts.scorePercent, passed: assessmentAttempts.passed, submittedAt: assessmentAttempts.submittedAt })
@@ -393,6 +450,7 @@ export async function getStaffReporting(filters: ReportingFilters) {
       completed: personEnrollments.filter(item => item.status === "completed").length,
       averageScore,
       lastActivity: personAttempts[0]?.submittedAt ?? personEnrollments[0]?.completedAt ?? null,
+      courses: personEnrollments,
     };
   });
 
@@ -403,6 +461,7 @@ export async function getStaffReporting(filters: ReportingFilters) {
   return {
     metrics: {
       learners: filteredPeople.length,
+      publishedCourses: publishedCourseRows.length,
       assigned: enrollments.length,
       completed,
       completionRate: enrollments.length ? Math.round((completed / enrollments.length) * 100) : 0,

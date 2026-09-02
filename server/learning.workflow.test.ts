@@ -14,6 +14,11 @@ describe("Maximed learning workflow rules", () => {
     expect(evaluateAssessment(questions, { "1": "A", "2": "X", "3": "C" }, 80)).toEqual({ scorePercent: 67, passed: false });
   });
 
+  it("grades short answers without treating letter case or outer spaces as different answers", () => {
+    const questions = [{ id: 1, correctChoice: "Refer to the pharmacist", questionType: "short_answer" as const }];
+    expect(evaluateAssessment(questions, { "1": "  refer to the pharmacist  " }, 100)).toEqual({ scorePercent: 100, passed: true });
+  });
+
   it("rejects additional submissions once the attempt limit is reached", () => {
     expect(canSubmitAssessment(2, 3)).toBe(true);
     expect(canSubmitAssessment(3, 3)).toBe(false);

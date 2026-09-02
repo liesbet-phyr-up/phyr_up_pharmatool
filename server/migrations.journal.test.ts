@@ -6,14 +6,12 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 // requires drizzle/meta/_journal.json and one .sql file per journal entry.
 // This is the second crash that would have hit Railway after the dirname fix.
 describe("migration journal", () => {
-  it("parses the committed journal and all three SQL files", () => {
+  it("parses the committed journal and every generated SQL file", () => {
     const migrationsFolder = path.join(process.cwd(), "drizzle");
     const migrations = readMigrationFiles({ migrationsFolder });
 
-    expect(migrations).toHaveLength(3);
-    expect(migrations.map((migration) => migration.folderMillis)).toEqual([
-      1756000000000, 1756000000001, 1756000000002,
-    ]);
+    expect(migrations.length).toBeGreaterThanOrEqual(4);
+    expect(migrations.map((migration) => migration.folderMillis)).toEqual([...migrations.map((migration) => migration.folderMillis)].sort((a, b) => a - b));
 
     for (const migration of migrations) {
       expect(migration.sql.length).toBeGreaterThan(0);

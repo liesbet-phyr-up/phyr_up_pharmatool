@@ -18,6 +18,7 @@ const navBySpace = {
   admin: [
     { label: "Administration", path: "/admin", icon: Settings2 },
     { label: "People & permissions", path: "/admin#people", icon: UsersRound },
+    { label: "Learning catalogue", path: "/admin/courses", icon: BookOpen },
   ],
 };
 

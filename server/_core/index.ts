@@ -12,7 +12,6 @@ import { appRouter } from "../routers";
 import { registerAuthRoutes } from "./auth";
 import { createContext } from "./context";
 import { ENV } from "./env";
-import { registerStorageProxy } from "./storageProxy";
 import { serveStatic, setupVite } from "./vite";
 
 // Fail-closed boot (Javin, 29 Aug): refuse to listen without a session secret
@@ -64,10 +63,7 @@ async function startServer() {
     res.status(200).json({ ok: true });
   });
 
-  registerStorageProxy(app);
-  // First-party auth (OTP login + invite redemption). The Manus OAuth callback
-  // route is no longer registered: it cannot work off-platform and the
-  // OWNER_OPEN_ID admin path is gone.
+  // First-party authentication uses email codes and invite redemption.
   registerAuthRoutes(app);
   // Naledi POC: isolated from tRPC learning mutations. Fail-closed if unconfigured.
   registerNalediRoutes(app);

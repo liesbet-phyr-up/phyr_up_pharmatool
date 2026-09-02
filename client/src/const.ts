@@ -1,9 +1,7 @@
 export { COOKIE_NAME } from "@shared/const";
 
-// First-party login (Javin, 29 Aug): email OTP. The Manus OAuth portal flow
-// (VITE_OAUTH_PORTAL_URL + __Host- state nonce cookie) is removed from the
-// happy path. Call sites keep the startLogin() name so this stays a one-line
-// behaviour swap.
+// First-party email-code sign-in. Call sites retain the startLogin() name so
+// the application can move users to its own login page from one consistent action.
 export const startLogin = () => {
   window.location.href = "/login";
 };
